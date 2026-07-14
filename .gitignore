@@ -3,3 +3,5 @@ target/
 .nrepl-port
 *.jar
 .wrangler/
+.env
+.env.*
