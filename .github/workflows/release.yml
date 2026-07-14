@@ -1,0 +1,99 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  METABASE_VERSION: v0.62.4
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: DeLaGuardo/setup-clojure@13.6.1
+        with:
+          cli: latest
+
+      - name: Cache Metabase build dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: mb-build-deps-${{ env.METABASE_VERSION }}
+
+      - name: Clone Metabase and register driver
+        run: |
+          git clone --depth 1 --branch "$METABASE_VERSION" https://github.com/metabase/metabase.git ../metabase
+          ln -s "$GITHUB_WORKSPACE" ../metabase/modules/drivers/d1
+          python3 - <<'EOF'
+          import pathlib
+          p = pathlib.Path("../metabase/modules/drivers/deps.edn")
+          s = p.read_text()
+          if "metabase/d1" not in s:
+              s = s.replace(" :deps\n {", ' :deps\n {metabase/d1                 {:local/root "d1"}\n  ', 1)
+              p.write_text(s)
+          EOF
+
+      - name: Build driver JAR
+        working-directory: ../metabase
+        run: ./bin/build-driver.sh d1
+
+      - name: Collect JAR
+        run: cp ../metabase/resources/modules/d1.metabase-driver.jar .
+
+      # smoke-test the built JAR against the local D1 emulator before publishing
+      - name: Cache Metabase uberjar
+        id: mb-jar
+        uses: actions/cache@v6
+        with:
+          path: metabase.jar
+          key: metabase-jar-${{ env.METABASE_VERSION }}
+
+      - name: Download Metabase
+        if: steps.mb-jar.outputs.cache-hit != 'true'
+        run: curl -fsSL -o metabase.jar "https://downloads.metabase.com/${METABASE_VERSION}/metabase.jar"
+
+      - name: Run e2e test against emulator
+        run: |
+          mkdir -p plugins && cp d1.metabase-driver.jar plugins/
+          python3 - <<'EOF'
+          import sqlite3, pathlib
+          conn = sqlite3.connect("d1.sqlite")
+          conn.executescript(pathlib.Path("test/seed.sql").read_text())
+          conn.commit()
+          EOF
+          python3 test/d1_mock_server.py --port 8787 --db d1.sqlite \
+            --account-id test-account --database-id test-db --token test-token \
+            > d1-mock.log 2>&1 &
+          MB_JETTY_PORT=3000 MB_PLUGINS_DIR="$PWD/plugins" java -jar metabase.jar > metabase.log 2>&1 &
+          MB_URL=http://localhost:3000 D1_ACCOUNT_ID=test-account D1_DATABASE_ID=test-db \
+            D1_API_TOKEN=test-token D1_API_BASE_URL=http://127.0.0.1:8787 \
+            python3 test/e2e_test.py
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" d1.metabase-driver.jar \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes "Built against Metabase ${METABASE_VERSION}. Copy \`d1.metabase-driver.jar\` into your Metabase \`plugins/\` directory and restart."
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          tail -100 metabase.log 2>/dev/null || true
+          cat d1-mock.log 2>/dev/null || true

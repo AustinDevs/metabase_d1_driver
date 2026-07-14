@@ -6,7 +6,7 @@ D1 is SQLite under the hood but has no JDBC driver, so this plugin pairs Metabas
 
 ## Installation
 
-1. Download `d1.metabase-driver.jar` (or build it yourself, below).
+1. Download `d1.metabase-driver.jar` from the [latest release](../../releases/latest) (or build it yourself, below).
 2. Copy it into the `plugins/` directory of your Metabase instance.
 3. Restart Metabase. **Cloudflare D1** now appears in *Admin → Databases → Add database*.
 
