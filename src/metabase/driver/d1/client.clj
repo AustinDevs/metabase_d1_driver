@@ -15,11 +15,18 @@
 
 (set! *warn-on-reflection* true)
 
-(def ^:private cloudflare-api-base "https://api.cloudflare.com/client/v4")
+(def ^:private default-api-base-url "https://api.cloudflare.com/client/v4")
+
+(defn- api-base-url
+  [{:keys [api-base-url]}]
+  (let [url (some-> api-base-url str/trim)]
+    (if (seq url)
+      (str/replace url #"/+$" "")
+      default-api-base-url)))
 
 (defn- raw-query-url
-  [{:keys [account-id database-id]}]
-  (format "%s/accounts/%s/d1/database/%s/raw" cloudflare-api-base (str/trim account-id) (str/trim database-id)))
+  [{:keys [account-id database-id] :as details}]
+  (format "%s/accounts/%s/d1/database/%s/raw" (api-base-url details) (str/trim account-id) (str/trim database-id)))
 
 (defn- coerce-param
   "Make a query parameter JSON- and SQLite-friendly. D1 bindings accept strings, numbers, and null."

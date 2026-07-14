@@ -44,6 +44,17 @@ cd metabase
 - **Sync:** table discovery via `sqlite_master`, columns via `PRAGMA table_info`, foreign keys via `PRAGMA foreign_key_list` — all executed over the REST API. D1's internal `_cf_*` tables are excluded.
 - **Execution:** compiled SQL and parameters are POSTed to the `/raw` endpoint, which returns column names and row arrays separately (correct ordering, no column-name collisions, column metadata even for empty results).
 
+## Testing
+
+CI (`.github/workflows/e2e.yml`) builds the plugin, downloads the matching Metabase uberjar, and runs `test/e2e_test.py` — a full end-to-end pass covering connection validation, schema sync (types, PKs, FKs), MBQL queries, date bucketing, implicit FK joins, native parameterized queries, and error handling.
+
+Two jobs run the same test:
+
+- **e2e (local D1 emulator)** — always runs, no credentials needed. `test/d1_mock_server.py` emulates the D1 `/raw` endpoint on top of a local SQLite file (the driver's optional *API base URL* setting points Metabase at it).
+- **e2e (real Cloudflare D1)** — runs when `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` repo secrets are configured; creates an ephemeral D1 database per run and deletes it afterward.
+
+To run locally: seed a SQLite file from `test/seed.sql`, start the mock server, start Metabase with the plugin, then run `MB_URL=... D1_ACCOUNT_ID=test-account D1_DATABASE_ID=test-db D1_API_TOKEN=test-token D1_API_BASE_URL=http://127.0.0.1:8787 python3 test/e2e_test.py`.
+
 ## Limitations
 
 - **Analytics/read focus.** SELECT queries and sync introspection are the supported path; Metabase actions/uploads are disabled.

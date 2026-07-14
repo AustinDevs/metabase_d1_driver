@@ -26,6 +26,11 @@ driver:
       type: password
       required: true
       helper-text: A Cloudflare API token with D1 read permission for this account.
+    - name: api-base-url
+      display-name: API base URL
+      placeholder: https://api.cloudflare.com/client/v4
+      required: false
+      helper-text: Leave blank unless routing Cloudflare API calls through a proxy.
 init:
   - step: load-namespace
     namespace: metabase.driver.d1
