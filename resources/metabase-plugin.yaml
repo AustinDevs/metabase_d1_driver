@@ -1,0 +1,31 @@
+info:
+  name: Metabase Cloudflare D1 Driver
+  version: 1.0.0
+  description: Allows Metabase to connect to Cloudflare D1 databases via the Cloudflare HTTP API.
+contact-info:
+  name: Kevin Colten
+  address: kevincolten@gmail.com
+driver:
+  name: d1
+  display-name: Cloudflare D1
+  lazy-load: true
+  parent: sql
+  connection-properties:
+    - name: account-id
+      display-name: Cloudflare Account ID
+      placeholder: 023e105f4ecef8ad9ca31a8372d0c353
+      required: true
+      helper-text: Found in the Cloudflare dashboard sidebar, or via `wrangler whoami`.
+    - name: database-id
+      display-name: D1 Database ID
+      placeholder: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      required: true
+      helper-text: The UUID of the D1 database, shown in the dashboard or `wrangler d1 info <name>`.
+    - name: api-token
+      display-name: API Token
+      type: password
+      required: true
+      helper-text: A Cloudflare API token with D1 read permission for this account.
+init:
+  - step: load-namespace
+    namespace: metabase.driver.d1

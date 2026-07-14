@@ -1,0 +1,13 @@
+{:paths ["src" "resources"]
+
+ ;; clj-http, cheshire/metabase.util.json, java-time, etc. are all provided by Metabase at runtime
+ :deps {}
+
+ :mvn/repos
+ {"opensaml" {:url "https://build.shibboleth.net/nexus/content/repositories/releases/"}}
+
+ :aliases
+ {;; for hacking on the driver from a REPL launched inside a Metabase checkout; not needed for building
+  :dev
+  {:extra-deps
+   {io.github.metabase/metabase {:git/tag "v0.62.4", :git/sha "dd12298a"}}}}}
