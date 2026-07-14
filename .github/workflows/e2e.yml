@@ -50,10 +50,14 @@ jobs:
         working-directory: ../metabase
         run: ./bin/build-driver.sh d1
 
+      # upload-artifact rejects paths containing '..', so copy the JAR into the workspace first
+      - name: Collect JAR
+        run: cp ../metabase/resources/modules/d1.metabase-driver.jar .
+
       - uses: actions/upload-artifact@v7
         with:
           name: d1-driver-jar
-          path: ../metabase/resources/modules/d1.metabase-driver.jar
+          path: d1.metabase-driver.jar
           if-no-files-found: error
 
   e2e-mock:
