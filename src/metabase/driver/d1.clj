@@ -82,7 +82,7 @@
 (defn- quote-identifier [s]
   (str "\"" (str/replace s "\"" "\"\"") "\""))
 
-(defn- table-names
+(defn- all-table-names
   "Names of the user tables and views in the database, in name order."
   [details]
   (mapv :name (query-maps details
@@ -96,7 +96,7 @@
 
 (defmethod driver/describe-database* :d1
   [_driver database]
-  {:tables (set (for [name (table-names (driver.conn/effective-details database))]
+  {:tables (set (for [name (all-table-names (driver.conn/effective-details database))]
                   {:name name, :schema nil}))})
 
 ;; SQLite types can have optional lengths, e.g. NVARCHAR(100) or NUMERIC(10,5), and columns may have no declared
@@ -171,9 +171,9 @@
 (defmethod driver/describe-fks :d1
   [_driver database & {:keys [table-names]}]
   (let [details (driver.conn/effective-details database)
-        names   (cond->> (table-names details)
+        names   (cond->> (all-table-names details)
                   (seq table-names) (filter (set table-names)))]
-    ;; results must be ordered by fk-table-name; `table-names` is already sorted
+    ;; results must be ordered by fk-table-name; `all-table-names` already sorts
     (into [] (mapcat #(table-fks details %)) names)))
 
 ;;;; ------------------------------------------------- Execution -------------------------------------------------
