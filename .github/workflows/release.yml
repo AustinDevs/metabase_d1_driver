@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - "v*"
+  # manual path for environments that can push commits but not tags: the run creates the tag at the built commit
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to create (e.g. v1.2.3)"
+        required: true
+        type: string
 
 env:
   METABASE_VERSION: v0.62.4
@@ -16,6 +23,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Resolve release tag
+        id: tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_VERSION"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          case "$TAG" in
+            v*) ;;
+            *) echo "release tag must start with 'v' (got '$TAG')" >&2; exit 1 ;;
+          esac
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "tag $TAG already exists" >&2; exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v5
         with:
@@ -83,12 +109,16 @@ jobs:
             D1_API_TOKEN=test-token D1_API_BASE_URL=http://127.0.0.1:8787 \
             python3 test/e2e_test.py
 
+      # --target creates the tag at the built commit when it doesn't exist yet (manual dispatch); it is ignored
+      # when the run was triggered by pushing the tag
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" d1.metabase-driver.jar \
-            --title "$GITHUB_REF_NAME" \
+          gh release create "$TAG" d1.metabase-driver.jar \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
             --generate-notes \
             --notes "Built against Metabase ${METABASE_VERSION}. Copy \`d1.metabase-driver.jar\` into your Metabase \`plugins/\` directory and restart."
 
