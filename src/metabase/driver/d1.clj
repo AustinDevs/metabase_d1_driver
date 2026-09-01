@@ -82,18 +82,22 @@
 (defn- quote-identifier [s]
   (str "\"" (str/replace s "\"" "\"\"") "\""))
 
+(defn- table-names
+  "Names of the user tables and views in the database, in name order."
+  [details]
+  (mapv :name (query-maps details
+                          (str "SELECT name FROM sqlite_master "
+                               "WHERE type IN ('table', 'view') "
+                               ;; exclude SQLite internals and D1's own bookkeeping tables (_cf_KV etc.)
+                               "AND name NOT LIKE 'sqlite!_%' ESCAPE '!' "
+                               "AND name NOT LIKE '!_cf!_%' ESCAPE '!' "
+                               "ORDER BY name")
+                          [])))
+
 (defmethod driver/describe-database* :d1
   [_driver database]
-  (let [details (driver.conn/effective-details database)
-        tables  (query-maps details
-                            (str "SELECT name FROM sqlite_master "
-                                 "WHERE type IN ('table', 'view') "
-                                 ;; exclude SQLite internals and D1's own bookkeeping tables (_cf_KV etc.)
-                                 "AND name NOT LIKE 'sqlite!_%' ESCAPE '!' "
-                                 "AND name NOT LIKE '!_cf!_%' ESCAPE '!'")
-                            [])]
-    {:tables (set (for [{:keys [name]} tables]
-                    {:name name, :schema nil}))}))
+  {:tables (set (for [name (table-names (driver.conn/effective-details database))]
+                  {:name name, :schema nil}))})
 
 ;; SQLite types can have optional lengths, e.g. NVARCHAR(100) or NUMERIC(10,5), and columns may have no declared
 ;; type at all. Same pattern list as the SQLite driver.
@@ -141,19 +145,36 @@
                      :database-required (and (pos? (long (or notnull 0)))
                                              (zero? (long (or pk 0))))}))}))
 
-#_{:clj-kondo/ignore [:deprecated-var]}
-(defmethod driver/describe-table-fks :d1
-  [_driver database table]
+;; Foreign keys are synced through `driver/describe-fks` (added in Metabase 0.49). The older per-table
+;; `driver/describe-table-fks` was removed in 0.63, and defining a method on a var that no longer exists aborts
+;; loading this namespace, which leaves the driver half-defined ("No method in multimethod
+;; 'execute-reducible-query'"). On 0.62 and earlier, `describe-fks` is only consulted when the driver declares the
+;; `:describe-fks` feature; the feature keyword is simply unused on 0.63+.
+(defmethod driver/database-supports? [:d1 :describe-fks] [_driver _feature _db] true)
+
+(defn- table-fks
+  "Foreign-key entries (in [[metabase.driver/describe-fks]] result shape) for the table named `table-name`."
+  [details table-name]
+  (let [fks (query-maps details
+                        (format "PRAGMA foreign_key_list(%s)" (quote-identifier table-name))
+                        [])]
+    (for [{dest-table :table, from :from, to :to} fks
+          ;; `to` is nil when the FK references the dest table's implicit rowid primary key; skip those
+          :when to]
+      {:fk-table-name   table-name
+       :fk-table-schema nil
+       :fk-column-name  from
+       :pk-table-name   dest-table
+       :pk-table-schema nil
+       :pk-column-name  to})))
+
+(defmethod driver/describe-fks :d1
+  [_driver database & {:keys [table-names]}]
   (let [details (driver.conn/effective-details database)
-        fks     (query-maps details
-                            (format "PRAGMA foreign_key_list(%s)" (quote-identifier (:name table)))
-                            [])]
-    (set (for [{dest-table :table, from :from, to :to} fks
-               ;; `to` is nil when the FK references the dest table's implicit rowid primary key; skip those
-               :when to]
-           {:fk-column-name   from
-            :dest-table       {:name dest-table, :schema nil}
-            :dest-column-name to}))))
+        names   (cond->> (table-names details)
+                  (seq table-names) (filter (set table-names)))]
+    ;; results must be ordered by fk-table-name; `table-names` is already sorted
+    (into [] (mapcat #(table-fks details %)) names)))
 
 ;;;; ------------------------------------------------- Execution -------------------------------------------------
 

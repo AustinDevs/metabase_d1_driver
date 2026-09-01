@@ -10,6 +10,8 @@ D1 is SQLite under the hood but has no JDBC driver, so this plugin pairs Metabas
 2. Copy it into the `plugins/` directory of your Metabase instance.
 3. Restart Metabase. **Cloudflare D1** now appears in *Admin → Databases → Add database*.
 
+Requires Metabase 0.59 or newer; CI tests each release against the 0.62 and 0.63 lines.
+
 ## Connection settings
 
 | Setting | Where to find it |
@@ -24,7 +26,7 @@ The plugin is built with Metabase's own driver build tooling. You need the [Cloj
 
 ```sh
 # 1. Clone Metabase at the version you're targeting
-git clone --depth 1 --branch v0.62.4 https://github.com/metabase/metabase.git
+git clone --depth 1 --branch v0.63.16.1 https://github.com/metabase/metabase.git
 
 # 2. Link this driver into the checkout and register it
 ln -s /path/to/metabase_d1_driver metabase/modules/drivers/d1
@@ -41,7 +43,7 @@ cd metabase
 
 - **Driver registration:** `:d1` registers with parent `:sql` (the non-JDBC path used by drivers like BigQuery), inheriting Metabase's MBQL→SQL compiler.
 - **SQL dialect:** the SQLite dialect (`strftime` date bucketing, unix-epoch handling, boolean-as-integer, etc.) is ported from Metabase's SQLite driver in `metabase.driver.d1.query-processor`.
-- **Sync:** table discovery via `sqlite_master`, columns via `PRAGMA table_info`, foreign keys via `PRAGMA foreign_key_list` — all executed over the REST API. D1's internal `_cf_*` tables are excluded. D1 blocks `sqlite_version()`, so the database version shown in Metabase is the D1 engine version (e.g. `Cloudflare D1 production`) from the [database-metadata endpoint](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/get/).
+- **Sync:** table discovery via `sqlite_master`, columns via `PRAGMA table_info`, foreign keys via `PRAGMA foreign_key_list` (exposed through `driver/describe-fks`) — all executed over the REST API. D1's internal `_cf_*` tables are excluded. D1 blocks `sqlite_version()`, so the database version shown in Metabase is the D1 engine version (e.g. `Cloudflare D1 production`) from the [database-metadata endpoint](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/get/).
 - **Execution:** compiled SQL and parameters are POSTed to the `/raw` endpoint, which returns column names and row arrays separately (correct ordering, no column-name collisions, column metadata even for empty results).
 
 ## Testing
