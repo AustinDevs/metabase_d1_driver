@@ -41,7 +41,7 @@ cd metabase
 
 - **Driver registration:** `:d1` registers with parent `:sql` (the non-JDBC path used by drivers like BigQuery), inheriting Metabase's MBQL→SQL compiler.
 - **SQL dialect:** the SQLite dialect (`strftime` date bucketing, unix-epoch handling, boolean-as-integer, etc.) is ported from Metabase's SQLite driver in `metabase.driver.d1.query-processor`.
-- **Sync:** table discovery via `sqlite_master`, columns via `PRAGMA table_info`, foreign keys via `PRAGMA foreign_key_list` — all executed over the REST API. D1's internal `_cf_*` tables are excluded.
+- **Sync:** table discovery via `sqlite_master`, columns via `PRAGMA table_info`, foreign keys via `PRAGMA foreign_key_list` — all executed over the REST API. D1's internal `_cf_*` tables are excluded. D1 blocks `sqlite_version()`, so the database version shown in Metabase is the D1 engine version (e.g. `Cloudflare D1 production`) from the [database-metadata endpoint](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/get/).
 - **Execution:** compiled SQL and parameters are POSTed to the `/raw` endpoint, which returns column names and row arrays separately (correct ordering, no column-name collisions, column metadata even for empty results).
 
 ## Testing

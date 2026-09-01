@@ -2,13 +2,21 @@
 """Minimal emulator of the Cloudflare D1 REST API's /raw endpoint, backed by a local SQLite file.
 
 Lets the e2e test exercise the Metabase driver without Cloudflare credentials. Implements exactly what the
-driver uses: POST /accounts/{account_id}/d1/database/{database_id}/raw with bearer-token auth, returning
-{"result": [{"results": {"columns": [...], "rows": [[...]]}, "success": true, "meta": {...}}], "success": true}.
+driver uses:
+
+  * POST /accounts/{account_id}/d1/database/{database_id}/raw with bearer-token auth, returning
+    {"result": [{"results": {"columns": [...], "rows": [[...]]}, "success": true, "meta": {...}}], "success": true}
+  * GET  /accounts/{account_id}/d1/database/{database_id} returning the database-metadata envelope
+    {"result": {"name": ..., "uuid": ..., "version": "production", ...}, "success": true}
+
+Like real D1, `sqlite_version()` is refused with "not authorized to use function: sqlite_version".
 
 Usage: d1_mock_server.py --port 8787 --db /path/to.sqlite --account-id A --database-id B --token T
 """
 import argparse
 import json
+import os
+import re
 import sqlite3
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,13 +40,42 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_POST(self):
-        expected_path = f"/accounts/{ARGS.account_id}/d1/database/{ARGS.database_id}/raw"
-        # tolerate a base-url prefix like /client/v4
-        if not self.path.endswith(expected_path):
-            return self._respond(404, d1_error(7404, f"no route for {self.path}"))
+    def _check_route(self, expected_path):
+        """Return True if the request matches `expected_path` (tolerating a base-url prefix like /client/v4) and
+        carries the right bearer token; otherwise send the error response and return False."""
+        if self.path.rstrip("/") != expected_path and not self.path.endswith(expected_path):
+            self._respond(404, d1_error(7404, f"no route for {self.path}"))
+            return False
         if self.headers.get("Authorization") != f"Bearer {ARGS.token}":
-            return self._respond(401, d1_error(10000, "Authentication error"))
+            self._respond(401, d1_error(10000, "Authentication error"))
+            return False
+        return True
+
+    def do_GET(self):
+        if not self._check_route(f"/accounts/{ARGS.account_id}/d1/database/{ARGS.database_id}"):
+            return
+        conn = sqlite3.connect(ARGS.db)
+        try:
+            num_tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE type = 'table'").fetchone()[0]
+        finally:
+            conn.close()
+        self._respond(200, {
+            "result": {
+                "uuid": ARGS.database_id,
+                "name": os.path.basename(ARGS.db),
+                "version": "production",
+                "num_tables": num_tables,
+                "file_size": os.path.getsize(ARGS.db),
+                "created_at": "2026-01-01T00:00:00.000Z",
+            },
+            "success": True,
+            "errors": [],
+            "messages": [],
+        })
+
+    def do_POST(self):
+        if not self._check_route(f"/accounts/{ARGS.account_id}/d1/database/{ARGS.database_id}/raw"):
+            return
 
         try:
             length = int(self.headers.get("Content-Length", 0))
@@ -46,6 +83,12 @@ class Handler(BaseHTTPRequestHandler):
             sql, params = req.get("sql", ""), req.get("params") or []
         except Exception as e:
             return self._respond(400, d1_error(7400, f"bad request: {e}"))
+
+        # D1 blocks sqlite_version(); mirror that so the driver never comes to depend on it
+        m = re.search(r"\bsqlite_version\s*\(", sql, re.IGNORECASE)
+        if m:
+            return self._respond(400, d1_error(
+                7500, f"not authorized to use function: sqlite_version at offset {m.start()}: SQLITE_ERROR"))
 
         conn = sqlite3.connect(ARGS.db)
         try:

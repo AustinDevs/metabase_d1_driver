@@ -56,15 +56,19 @@
     (boolean (and (= columns ["ok"])
                   (= rows [[1]])))))
 
+;; D1 refuses `sqlite_version()` ("not authorized to use function: sqlite_version"), and none of the PRAGMAs it
+;; allows expose the underlying SQLite build either. The closest thing to a DBMS version is the D1 engine version
+;; (e.g. "production") reported by the REST API's database-metadata endpoint, so report that instead.
 (defmethod driver/dbms-version :d1
   [_driver database]
-  (try
-    (let [{:keys [rows]} (d1.client/execute! (driver.conn/effective-details database)
-                                             "SELECT sqlite_version()" [])]
-      {:version (str "SQLite " (ffirst rows) " (Cloudflare D1)")})
-    (catch Throwable e
-      (log/warnf e "Error fetching D1 database version")
-      nil)))
+  (let [d1-version (try
+                     (:version (d1.client/database-info (driver.conn/effective-details database)))
+                     (catch Throwable e
+                       (log/infof "Could not fetch D1 database metadata (%s); reporting a generic version"
+                                  (ex-message e))
+                       (log/debug e "Error fetching D1 database metadata")
+                       nil))]
+    {:version (str "Cloudflare D1" (when (seq (str d1-version)) (str " " d1-version)))}))
 
 ;;;; --------------------------------------------------- Sync ----------------------------------------------------
 

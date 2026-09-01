@@ -6,7 +6,7 @@ Drives a running Metabase instance (with the d1 plugin installed) through its HT
 
   1. completes initial setup
   2. adds the D1 database (validates driver/can-connect?)
-  3. waits for sync, asserts tables / column types / PK / FK metadata
+  3. waits for sync, asserts DBMS version + tables / column types / PK / FK metadata
   4. runs an MBQL row query (temporal values must come back as timestamps)
   5. runs a date-bucketed aggregation (exercises the SQLite strftime dialect)
   6. runs an implicit-FK-join breakout with a date filter
@@ -107,6 +107,13 @@ def wait_for_sync(db_id, timeout=180):
     raise AssertionError("sync did not complete in time")
 
 
+def assert_dbms_version(db_id):
+    # D1 refuses sqlite_version(), so the driver reports the D1 engine version from the metadata endpoint instead
+    db = api("GET", f"/api/database/{db_id}")
+    version = (db.get("dbms_version") or {}).get("version") or ""
+    check("dbms version reported from D1 metadata", version.startswith("Cloudflare D1 "), repr(version))
+
+
 def get_metadata(db_id):
     meta = api("GET", f"/api/database/{db_id}/metadata")
     tables = {t["name"]: t for t in meta["tables"]}
@@ -204,6 +211,7 @@ def main():
     setup_admin()
     db_id = add_database()
     wait_for_sync(db_id)
+    assert_dbms_version(db_id)
     tables, fields = get_metadata(db_id)
     assert_schema(tables, fields)
     test_queries(db_id, tables, fields)
